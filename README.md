@@ -60,6 +60,7 @@ make
 - `mem_cpp` resolves the private `MEMDataset::Create` C++ symbol by mangled name at runtime. That is intentionally fragile, and mirrors the kind of workaround downstream projects currently need.
 - `mem_open` modes automatically set `GDAL_MEM_ENABLE_OPEN=YES` so the MEM string open path is available.
 - `mem_open` benchmarks wrapper creation around a preallocated caller-owned backing buffer. This matches the normal `MEM:::` use case better than allocating a fresh external buffer inside each timed iteration.
+- `create_add_band` uses caller-owned backing buffers via `DATAPOINTER` so the benchmark focuses on dataset/band wiring overhead instead of repeated per-band heap allocation inside GDAL.
 
 ## Example benchmark matrix
 

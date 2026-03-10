@@ -2,7 +2,7 @@ CXX ?= c++
 GDAL_CONFIG ?= gdal-config
 UNAME_S := $(shell uname -s)
 
-CXXFLAGS = -std=c++17 -Wall -Wextra -O2 -pthread $(shell $(GDAL_CONFIG) --cflags)
+CXXFLAGS = -std=c++17 -Wall -Wextra -O2 -g -pthread $(shell $(GDAL_CONFIG) --cflags)
 LDFLAGS = $(shell $(GDAL_CONFIG) --libs) -pthread
 TARGET = gdal_mem_test
 CLANG_FORMAT ?= clang-format

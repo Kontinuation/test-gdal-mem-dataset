@@ -1,4 +1,5 @@
 gdal_mem_test
 *.o
+*.dSYM/
 profiles/
 results/

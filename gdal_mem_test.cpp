@@ -86,6 +86,8 @@ struct CreationContext {
 struct ThreadFixture {
   std::vector<GByte> open_buffer;
   std::string open_string;
+  std::vector<GByte> add_band_buffer;
+  std::vector<std::string> add_band_datapointers;
 };
 
 struct ThreadResult {
@@ -499,43 +501,65 @@ size_t compute_open_buffer_size(int width, int height, int bands,
 ThreadFixture make_thread_fixture(const Config &cfg, Mode mode, int initial_bands,
                                   int thread_index) {
   ThreadFixture fixture;
-  if (mode != Mode::kMemOpen && mode != Mode::kMemOpenInternal) {
-    return fixture;
+  if (mode == Mode::kMemOpen || mode == Mode::kMemOpenInternal) {
+    const size_t buffer_size =
+        compute_open_buffer_size(cfg.width, cfg.height, initial_bands,
+                                 cfg.data_type, cfg.interleave);
+    if (buffer_size > 0) {
+      fixture.open_buffer.resize(buffer_size);
+      std::fill(fixture.open_buffer.begin(), fixture.open_buffer.end(),
+                static_cast<GByte>(thread_index & 0xff));
+    }
+
+    const size_t type_size = bytes_per_sample(cfg.data_type);
+    size_t pixel_offset = type_size;
+    size_t line_offset =
+        checked_multiply(static_cast<size_t>(cfg.width), type_size, "line offset");
+    size_t band_offset =
+        checked_multiply(line_offset, static_cast<size_t>(cfg.height), "band offset");
+    if (cfg.interleave == Interleave::kPixel && initial_bands > 0) {
+      pixel_offset = checked_multiply(type_size, static_cast<size_t>(initial_bands),
+                                      "pixel offset");
+      line_offset = checked_multiply(pixel_offset, static_cast<size_t>(cfg.width),
+                                     "line offset");
+      band_offset = type_size;
+    }
+
+    std::ostringstream oss;
+    const uintptr_t ptr_value =
+        fixture.open_buffer.empty()
+            ? static_cast<uintptr_t>(0)
+            : reinterpret_cast<uintptr_t>(fixture.open_buffer.data());
+    oss << "MEM:::DATAPOINTER=0x" << std::hex << std::uppercase << ptr_value
+        << std::dec << ",PIXELS=" << cfg.width << ",LINES=" << cfg.height
+        << ",BANDS=" << initial_bands << ",DATATYPE="
+        << GDALGetDataTypeName(cfg.data_type)
+        << ",PIXELOFFSET=" << pixel_offset << ",LINEOFFSET=" << line_offset
+        << ",BANDOFFSET=" << band_offset;
+    fixture.open_string = oss.str();
   }
 
-  const size_t buffer_size =
-      compute_open_buffer_size(cfg.width, cfg.height, initial_bands,
-                               cfg.data_type, cfg.interleave);
-  if (buffer_size > 0) {
-    fixture.open_buffer.resize(buffer_size);
-    std::fill(fixture.open_buffer.begin(), fixture.open_buffer.end(),
+  if (cfg.operation == Operation::kCreateAddBand && cfg.bands > 0) {
+    const size_t band_bytes = checked_multiply(
+        checked_multiply(static_cast<size_t>(cfg.width),
+                         static_cast<size_t>(cfg.height), "add band bytes"),
+        bytes_per_sample(cfg.data_type), "add band bytes");
+    fixture.add_band_buffer.resize(checked_multiply(
+        band_bytes, static_cast<size_t>(cfg.bands), "add band buffer"));
+    std::fill(fixture.add_band_buffer.begin(), fixture.add_band_buffer.end(),
               static_cast<GByte>(thread_index & 0xff));
+    fixture.add_band_datapointers.reserve(static_cast<size_t>(cfg.bands));
+    for (int band_index = 0; band_index < cfg.bands; ++band_index) {
+      char szBuffer[32] = {'\0'};
+      int nRet = CPLPrintPointer(
+          szBuffer,
+          fixture.add_band_buffer.data() + band_bytes * static_cast<size_t>(band_index),
+          static_cast<int>(sizeof(szBuffer)));
+      szBuffer[std::min(nRet, static_cast<int>(sizeof(szBuffer)) - 1)] = '\0';
+      fixture.add_band_datapointers.emplace_back(szBuffer);
+    }
   }
 
-  const size_t type_size = bytes_per_sample(cfg.data_type);
-  size_t pixel_offset = type_size;
-  size_t line_offset = checked_multiply(static_cast<size_t>(cfg.width), type_size,
-                                        "line offset");
-  size_t band_offset = checked_multiply(line_offset, static_cast<size_t>(cfg.height),
-                                        "band offset");
-  if (cfg.interleave == Interleave::kPixel && initial_bands > 0) {
-    pixel_offset = checked_multiply(type_size, static_cast<size_t>(initial_bands),
-                                    "pixel offset");
-    line_offset = checked_multiply(pixel_offset, static_cast<size_t>(cfg.width),
-                                   "line offset");
-    band_offset = type_size;
-  }
-
-  std::ostringstream oss;
-  const uintptr_t ptr_value = fixture.open_buffer.empty()
-                                  ? static_cast<uintptr_t>(0)
-                                  : reinterpret_cast<uintptr_t>(fixture.open_buffer.data());
-  oss << "MEM:::DATAPOINTER=0x" << std::hex << std::uppercase << ptr_value
-      << std::dec << ",PIXELS=" << cfg.width << ",LINES=" << cfg.height
-      << ",BANDS=" << initial_bands << ",DATATYPE="
-      << GDALGetDataTypeName(cfg.data_type) << ",PIXELOFFSET=" << pixel_offset
-      << ",LINEOFFSET=" << line_offset << ",BANDOFFSET=" << band_offset;
-  fixture.open_string = oss.str();
   return fixture;
 }
 
@@ -624,11 +648,20 @@ void destroy_dataset(const CreationContext &ctx) {
   }
 }
 
-void add_bands(GDALDatasetH dataset, const Config &cfg) {
+void add_bands(GDALDatasetH dataset, const Config &cfg,
+               const ThreadFixture &fixture) {
   for (int band_index = 0; band_index < cfg.bands; ++band_index) {
-    if (GDALAddBand(dataset, cfg.data_type, nullptr) != CE_None) {
+    char **options = nullptr;
+    if (!fixture.add_band_datapointers.empty()) {
+      options = CSLSetNameValue(options, "DATAPOINTER",
+                                fixture.add_band_datapointers[static_cast<size_t>(band_index)]
+                                    .c_str());
+    }
+    if (GDALAddBand(dataset, cfg.data_type, options) != CE_None) {
+      CSLDestroy(options);
       fail("GDALAddBand failed");
     }
+    CSLDestroy(options);
   }
 }
 
@@ -691,7 +724,7 @@ void run_iteration(const Config &cfg, Mode mode, const ThreadFixture &fixture,
   CreationContext ctx = create_dataset(cfg, mode, fixture, initial_bands);
   try {
     if (cfg.operation == Operation::kCreateAddBand) {
-      add_bands(ctx.dataset, cfg);
+      add_bands(ctx.dataset, cfg, fixture);
     } else if (cfg.operation == Operation::kCreateWritePixel) {
       write_dataset(ctx.dataset, cfg, thread_index, iteration_index, false);
     } else if (cfg.operation == Operation::kCreateFull) {

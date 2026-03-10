@@ -27,37 +27,23 @@ class Scenario:
 
 SCENARIOS = [
     Scenario(
-        name="tiny_single",
-        description="create_only, 1x1x1 Byte, single-thread",
-        operation="create_only",
-        width=1,
-        height=1,
+        name="single",
+        description="create_add_band, 256x256x1 Byte, 8 threads",
+        operation="create_add_band",
+        width=256,
+        height=256,
         bands=1,
         data_type="Byte",
         threads=1,
-        iterations=200000,
-        warmup=5000,
-        quick_iterations=20000,
-        quick_warmup=1000,
-    ),
-    Scenario(
-        name="tiny_concurrent",
-        description="create_only, 1x1x1 Byte, 8 threads",
-        operation="create_only",
-        width=1,
-        height=1,
-        bands=1,
-        data_type="Byte",
-        threads=8,
-        iterations=50000,
+        iterations=20000,
         warmup=1000,
-        quick_iterations=5000,
+        quick_iterations=2000,
         quick_warmup=200,
     ),
     Scenario(
-        name="medium_concurrent",
-        description="create_only, 256x256x1 Byte, 8 threads",
-        operation="create_only",
+        name="concurrent",
+        description="create_add_band, 256x256x1 Byte, 8 threads",
+        operation="create_add_band",
         width=256,
         height=256,
         bands=1,
@@ -67,44 +53,6 @@ SCENARIOS = [
         warmup=1000,
         quick_iterations=2000,
         quick_warmup=200,
-    ),
-    Scenario(
-        name="add_band_concurrent",
-        description="create_add_band, 256x256x4 Float32, 8 threads",
-        operation="create_add_band",
-        width=256,
-        height=256,
-        bands=4,
-        data_type="Float32",
-        threads=8,
-        iterations=10000,
-        warmup=500,
-        quick_iterations=1000,
-        quick_warmup=100,
-    ),
-    Scenario(
-        name="full_concurrent",
-        description="create_full, 256x256x4 Float32, 8 threads, metadata + block write",
-        operation="create_full",
-        width=256,
-        height=256,
-        bands=4,
-        data_type="Float32",
-        threads=8,
-        iterations=5000,
-        warmup=250,
-        quick_iterations=500,
-        quick_warmup=50,
-        extra_args=(
-            "--set-geotransform",
-            "--set-projection",
-            "--write-size",
-            "block",
-            "--block-width",
-            "64",
-            "--block-height",
-            "64",
-        ),
     ),
 ]
 
@@ -197,6 +145,7 @@ def run_scenario(
     command = benchmark_command(bench, scenario, quick, extra_args)
     sys.stderr.write(f"[run_matrix] running scenario {scenario.name}\n")
     sys.stderr.flush()
+    print(" ".join(command))
     completed = subprocess.run(command, check=True, capture_output=True, text=True)
     try:
         return json.loads(completed.stdout)
