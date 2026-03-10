@@ -1,25 +1,25 @@
-# Tiny Concurrent Profile Findings
+# Concurrent Profile Findings
 
-This note summarizes profiling findings for the `tiny_concurrent` benchmark:
+This note summarizes profiling findings for the concurrent benchmark configuration used in the current matrix:
 
-- shape: `1x1`, `1` band, `Byte`
-- operation: `create_only`
+- shape: `512x512`, `1` band, `Byte`
+- operation: `create_add_band`
 - threads: `8`
-- iterations per thread: `200000`
+- iterations per thread: `20000`
 - profiler: macOS `/usr/bin/sample`
 
 The relevant sample outputs are in `profiles/mem_cpp.sample.txt`, `profiles/mem_driver_create.sample.txt`, `profiles/mem_open.sample.txt`, and `profiles/mem_open_internal.sample.txt`.
 
 ## Benchmark results
 
-One representative run after caching the MEM driver handle in the benchmark process:
+One representative run with thread-local CPL options enabled:
 
 | mode | ops/s | relative to `mem_cpp` |
 |---|---:|---:|
-| `mem_cpp` | 1,122,448.56 | 1.00x |
-| `mem_driver_create` | 398,889.81 | 0.36x |
-| `mem_open_internal` | 100,171.27 | 0.09x |
-| `mem_open` | 82,598.26 | 0.07x |
+| `mem_cpp` | 2,174,564.29 | 1.00x |
+| `mem_driver_create` | 435,688.96 | 0.20x |
+| `mem_open_internal` | 92,501.53 | 0.04x |
+| `mem_open` | 89,589.55 | 0.04x |
 
 `mem_open_internal` is only moderately faster than `mem_open`, so registration is not the main reason the open path is slow.
 
@@ -108,14 +108,12 @@ So once driver lookup is removed from the benchmark harness, `mem_driver_create`
 
 `mem_cpp` does not touch the driver manager or open-dataset list, but it still constructs a full `MEMDataset` object.
 
-The main visible cost is inside `MEMDataset::Create(...)`, especially initialization of `OGRSpatialReference` internals and config lookups:
+The main visible cost is inside `MEMDataset::Create(...)` and `MEMDataset::AddBand(...)`, especially initialization and object setup around band wiring.
 
-- `profiles/mem_cpp.sample.txt:89`
-- `profiles/mem_cpp.sample.txt:90`
-- `profiles/mem_cpp.sample.txt:93`
-- `profiles/mem_cpp.sample.txt:94`
+- `profiles/mem_cpp.sample.txt:220`
+- `profiles/mem_cpp.sample.txt:269`
 
-There is some mutex contention even here because `OGRSpatialReference` construction calls `CPLGetConfigOption()` / `CPLGetGlobalConfigOption()`.
+The benchmark now sets frequently-requested config values as thread-local CPL options before each worker starts, which reduces contention from repeated config lookups. The remaining overhead is mostly object lifecycle work rather than config-option lookup.
 
 So `mem_cpp` is not free, but it avoids both classes of extra work that hurt the alternatives:
 
@@ -141,4 +139,4 @@ A direct C API like `MEMCreate(...)` would provide a fast path with these proper
 - no open-option validation path
 - no insertion into the process-global open-dataset list
 
-That is exactly why it should outperform both existing public alternatives in multi-threaded tiny-dataset workloads.
+That is exactly why it should outperform both existing public alternatives in multi-threaded analytical workloads with many repeated temporary MEM dataset creations.

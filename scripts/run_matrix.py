@@ -28,24 +28,24 @@ class Scenario:
 SCENARIOS = [
     Scenario(
         name="single",
-        description="create_add_band, 256x256x1 Byte, 8 threads",
+        description="create_add_band, 512x512x1 Byte, 1 thread",
         operation="create_add_band",
-        width=256,
-        height=256,
+        width=512,
+        height=512,
         bands=1,
         data_type="Byte",
         threads=1,
-        iterations=20000,
+        iterations=50000,
         warmup=1000,
         quick_iterations=2000,
         quick_warmup=200,
     ),
     Scenario(
         name="concurrent",
-        description="create_add_band, 256x256x1 Byte, 8 threads",
+        description="create_add_band, 512x512x1 Byte, 8 threads",
         operation="create_add_band",
-        width=256,
-        height=256,
+        width=512,
+        height=512,
         bands=1,
         data_type="Byte",
         threads=8,
@@ -144,8 +144,8 @@ def run_scenario(
 ) -> list[dict]:
     command = benchmark_command(bench, scenario, quick, extra_args)
     sys.stderr.write(f"[run_matrix] running scenario {scenario.name}\n")
+    sys.stderr.write(f"[run_matrix] command: {' '.join(command)}\n")
     sys.stderr.flush()
-    print(" ".join(command))
     completed = subprocess.run(command, check=True, capture_output=True, text=True)
     try:
         return json.loads(completed.stdout)

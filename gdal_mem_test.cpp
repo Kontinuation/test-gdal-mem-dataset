@@ -139,6 +139,21 @@ constexpr const char *kProjectionWkt =
     "6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\","
     "0.0174532925199433]]";
 
+void configure_thread_local_options() {
+  constexpr std::pair<const char *, const char *> kThreadLocalOptions[] = {
+      {"CPL_DEBUG", "OFF"},
+      {"OSR_DEFAULT_AXIS_MAPPING_STRATEGY", "AUTHORITY_COMPLIANT"},
+      {"GDAL_VALIDATE_CREATION_OPTIONS", "YES"},
+      {"CHECK_WITH_INVERT_PROJ", "NO"},
+      {"GDAL_FORCE_CACHING", "NO"},
+      {"GDAL_ENABLE_READ_WRITE_MUTEX", "YES"},
+      {"GDAL_MEM_ENABLE_OPEN", "YES"},
+  };
+  for (const auto &entry : kThreadLocalOptions) {
+    CPLSetThreadLocalConfigOption(entry.first, entry.second);
+  }
+}
+
 std::string mode_to_string(Mode mode) {
   switch (mode) {
   case Mode::kMemCpp:
@@ -786,6 +801,7 @@ BenchmarkResult run_benchmark_once(const Config &cfg, Mode mode,
   for (int thread_index = 0; thread_index < cfg.threads; ++thread_index) {
     threads.emplace_back([&, thread_index]() {
       try {
+        configure_thread_local_options();
         ThreadResult &result = thread_results[static_cast<size_t>(thread_index)];
         result.latencies_ns.reserve(static_cast<size_t>(cfg.iterations));
 
@@ -1043,6 +1059,7 @@ int main(int argc, char **argv) {
 
     GDALAllRegister();
     CPLSetConfigOption("GDAL_MEM_ENABLE_OPEN", "YES");
+    configure_thread_local_options();
 
     print_environment(cfg);
 
