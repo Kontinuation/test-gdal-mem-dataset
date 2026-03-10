@@ -1,0 +1,4 @@
+gdal_mem_test
+*.o
+profiles/
+results/
